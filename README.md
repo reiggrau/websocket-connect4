@@ -269,7 +269,7 @@ Check that the HTTP server and the WebSocket server are still running. If you st
 py -m http.server
 ```
 
-````bash
+```bash
 # Terminal 2
 py app.py
 ```
@@ -277,4 +277,168 @@ py app.py
 Refresh http://localhost:8000/ in your web browser. Click various columns in the board. The server receives messages with the expected column number.
 
 There isn’t any feedback in the board because you haven’t implemented that yet. Let’s do it.
-````
+
+## Transmit from server to browser
+
+In JavaScript, you receive WebSocket messages by listening to message events. Here’s how to receive a message from the server and deserialize it from JSON:
+
+```js
+websocket.addEventListener("message", ({ data }) => {
+  const event = JSON.parse(data);
+  // do something with event
+});
+```
+
+You’re going to need three types of messages from the server to the browser:
+
+```js
+{type: "play", player: "red", column: 3, row: 0}
+{type: "win", player: "red"}
+{type: "error", message: "This slot is full."}
+```
+
+The JavaScript code receiving these messages will dispatch events depending on their type and take appropriate action. For example, it will react to an event of type "play" by displaying the move on the board with the playMove() function.
+
+Add this function to main.js:
+
+```js
+function showMessage(message) {
+  window.setTimeout(() => window.alert(message), 50);
+}
+
+function receiveMoves(board, websocket) {
+  websocket.addEventListener("message", ({ data }) => {
+    const event = JSON.parse(data);
+    switch (event.type) {
+      case "play":
+        // Update the UI with the move.
+        playMove(board, event.player, event.column, event.row);
+        break;
+      case "win":
+        showMessage(`Player ${event.player} wins!`);
+        // No further messages are expected; close the WebSocket connection.
+        websocket.close(1000);
+        break;
+      case "error":
+        showMessage(event.message);
+        break;
+      default:
+        throw new Error(`Unsupported event type: ${event.type}.`);
+    }
+  });
+}
+```
+
+NOTE: Why does showMessage use window.setTimeout?
+
+```
+When playMove() modifies the state of the board, the browser renders changes asynchronously. Conversely, window.alert() runs synchronously and blocks rendering while the alert is visible.
+
+If you called window.alert() immediately after playMove(), the browser could display the alert before rendering the move. You could get a “Player red wins!” alert without seeing red’s last move.
+
+We’re using window.alert() for simplicity in this tutorial. A real application would display these messages in the user interface instead. It wouldn’t be vulnerable to this problem.
+```
+
+Modify the initialization to call the receiveMoves() function:
+
+```js
+window.addEventListener("DOMContentLoaded", () => {
+  // Initialize the UI.
+  const board = document.querySelector(".board");
+  createBoard(board);
+  // Open the WebSocket connection and register event handlers.
+  const websocket = new WebSocket("ws://localhost:8001/");
+  receiveMoves(board, websocket);
+  sendMoves(board, websocket);
+});
+```
+
+At this point, the user interface should receive events properly. Let’s test it by modifying the server to send some events.
+
+Sending an event from Python is quite similar to JavaScript:
+
+```python
+event = {"type": "play", "player": "red", "column": 3, "row": 0}
+await websocket.send(json.dumps(event))
+```
+
+Don’t forget to serialize the event with json.dumps(). Else, websockets raises TypeError: data is a dict-like object.
+
+Modify the handler() coroutine in app.py as follows:
+
+```python
+import json
+
+from connect4 import PLAYER1, PLAYER2
+
+async def handler(websocket):
+    for player, column, row in [
+        (PLAYER1, 3, 0),
+        (PLAYER2, 3, 1),
+        (PLAYER1, 4, 0),
+        (PLAYER2, 4, 1),
+        (PLAYER1, 2, 0),
+        (PLAYER2, 1, 0),
+        (PLAYER1, 5, 0),
+    ]:
+        event = {
+            "type": "play",
+            "player": player,
+            "column": column,
+            "row": row,
+        }
+        await websocket.send(json.dumps(event))
+        await asyncio.sleep(0.5)
+    event = {
+        "type": "win",
+        "player": PLAYER1,
+    }
+    await websocket.send(json.dumps(event))
+```
+
+Restart the WebSocket server and refresh http://localhost:8000/ in your web browser. Seven moves appear at 0.5 second intervals. Then an alert announces the winner.
+
+Good! Now you know how to communicate both ways.
+
+Once you plug the game engine to process moves, you will have a fully functional game.
+
+# Add the game logic
+
+In the handler() coroutine, you’re going to initialize a game:
+
+```python
+# /app.py
+from connect4 import Connect4
+
+async def handler(websocket):
+    # Initialize a Connect Four game.
+    game = Connect4()
+
+    ...
+```
+
+Then, you’re going to iterate over incoming messages and take these steps:
+
+1. parse an event of type "play", the only type of event that the user interface sends;
+
+2. play the move in the board with the play() method, alternating between the two players;
+
+3. if play() raises ValueError because the move is illegal, send an event of type "error";
+
+4. else, send an event of type "play" to tell the user interface where the checker lands;
+
+5. if the move won the game, send an event of type "win".
+
+Try to implement this by yourself!
+
+Keep in mind that you must restart the WebSocket server and reload the page in the browser when you make changes.
+
+When it works, you can play the game from a single browser, with players taking alternate turns.
+
+NOTE: Enable debug logs to see all messages sent and received. Here’s how to enable debug logs:
+
+```python
+import logging
+
+logging.basicConfig(format="%(message)s", level=logging.DEBUG)
+```
