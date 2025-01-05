@@ -18,10 +18,16 @@ source .venv/Scripts/activate
 pip install websockets
 ```
 
-# 4 - Run the server
+# 4 - Run the websocket server
 
 ```bash
 py app.py
+```
+
+# 5 - Start the http server
+
+```bash
+py -m http.server
 ```
 
 # Part 1 - Send & receive
@@ -184,7 +190,9 @@ Stop the server with Ctrl-C and start it again:
 py app.py
 ```
 
+```
 NOTE: You must restart the WebSocket server when you make changes
+```
 
 Try connecting and disconnecting the interactive client again. The ConnectionClosedOK exception doesn’t appear anymore.
 
@@ -329,9 +337,8 @@ function receiveMoves(board, websocket) {
 }
 ```
 
-NOTE: Why does showMessage use window.setTimeout?
-
 ```
+NOTE: Why does showMessage use window.setTimeout?
 When playMove() modifies the state of the board, the browser renders changes asynchronously. Conversely, window.alert() runs synchronously and blocks rendering while the alert is visible.
 
 If you called window.alert() immediately after playMove(), the browser could display the alert before rendering the move. You could get a “Player red wins!” alert without seeing red’s last move.
@@ -402,7 +409,7 @@ Good! Now you know how to communicate both ways.
 
 Once you plug the game engine to process moves, you will have a fully functional game.
 
-# Add the game logic
+## Add the game logic
 
 In the handler() coroutine, you’re going to initialize a game:
 
@@ -442,3 +449,365 @@ import logging
 
 logging.basicConfig(format="%(message)s", level=logging.DEBUG)
 ```
+
+# Part 2 - Route & broadcast
+
+In the first part of the tutorial, you opened a WebSocket connection from a browser to a server and exchanged events to play moves. The state of the game was stored in an instance of the Connect4 class, referenced as a local variable in the connection handler coroutine.
+
+Now you want to open two WebSocket connections from two separate browsers, one for each player, to the same server in order to play the same game. This requires moving the state of the game to a place where both connections can access it.
+
+## Share game state
+
+As long as you’re running a single server process, you can share state by storing it in a global variable.
+
+```
+NOTE: What if you need to scale to multiple server processes?
+In that case, you must design a way for the process that handles a given connection to be aware of relevant events for that client. This is often achieved with a publish / subscribe mechanism.
+```
+
+How can you make two connection handlers agree on which game they’re playing? When the first player starts a game, you give it an identifier. Then, you communicate the identifier to the second player. When the second player joins the game, you look it up with the identifier.
+
+In addition to the game itself, you need to keep track of the WebSocket connections of the two players. Since both players receive the same events, you don’t need to treat the two connections differently; you can store both in the same set.
+
+Let’s sketch this in code.
+
+A module-level dict enables lookups by identifier:
+
+```python
+JOIN = {}
+```
+
+When the first player starts the game, initialize and store it:
+
+```python
+import secrets
+
+async def handler(websocket):
+    ...
+
+    # Initialize a Connect Four game, the set of WebSocket connections
+    # receiving moves from this game, and secret access token.
+    game = Connect4()
+    connected = {websocket}
+
+    join_key = secrets.token_urlsafe(12)
+    JOIN[join_key] = game, connected
+
+    try:
+
+        ...
+
+    finally:
+        del JOIN[join_key]
+```
+
+When the second player joins the game, look it up:
+
+```python
+async def handler(websocket):
+    ...
+
+    join_key = ...
+
+    # Find the Connect Four game.
+    game, connected = JOIN[join_key]
+
+    # Register to receive moves from this game.
+    connected.add(websocket)
+    try:
+
+        ...
+
+    finally:
+        connected.remove(websocket)
+```
+
+Notice how we’re carefully cleaning up global state with try: ... finally: ... blocks. Else, we could leave references to games or connections in global state, which would cause a memory leak.
+
+In both connection handlers, you have a game pointing to the same Connect4 instance, so you can interact with the game, and a connected set of connections, so you can send game events to both players as follows:
+
+```python
+async def handler(websocket):
+
+    ...
+
+    for connection in connected:
+        await connection.send(json.dumps(event))
+
+    ...
+```
+
+Perhaps you spotted a major piece missing from the puzzle. How does the second player obtain join_key? Let’s design new events to carry this information.
+
+To start a game, the first player sends an "init" event:
+
+```js
+{
+  type: "init";
+}
+```
+
+The connection handler for the first player creates a game as shown above and responds with:
+
+```js
+{type: "init", join: "<join_key>"}
+```
+
+With this information, the user interface of the first player can create a link to http://localhost:8000/?join=<join_key>. For the sake of simplicity, we will assume that the first player shares this link with the second player outside of the application, for example via an instant messaging service.
+
+To join the game, the second player sends a different "init" event:
+
+```js
+{type: "init", join: "<join_key>"}
+```
+
+The connection handler for the second player can look up the game with the join key as shown above. There is no need to respond.
+
+Let’s dive into the details of implementing this design.
+
+## Start a game
+
+We’ll start with the initialization sequence for the first player.
+
+In main.js, define a function to send an initialization event when the WebSocket connection is established, which triggers an open event:
+
+```js
+// /main.js
+
+function initGame(websocket) {
+  websocket.addEventListener("open", () => {
+    // Send an "init" event for the first player.
+    const event = { type: "init" };
+    websocket.send(JSON.stringify(event));
+  });
+}
+```
+
+Update the initialization sequence to call initGame():
+
+```js
+// /main.js
+
+window.addEventListener("DOMContentLoaded", () => {
+  // Initialize the UI.
+  const board = document.querySelector(".board");
+  createBoard(board);
+  // Open the WebSocket connection and register event handlers.
+  const websocket = new WebSocket("ws://localhost:8001/");
+  initGame(websocket);
+  receiveMoves(board, websocket);
+  sendMoves(board, websocket);
+});
+```
+
+In app.py, define a new handler coroutine — keep a copy of the previous one to reuse it later:
+
+```python
+# /app.py
+
+import secrets
+
+JOIN = {}
+
+async def start(websocket):
+    # Initialize a Connect Four game, the set of WebSocket connections
+    # receiving moves from this game, and secret access token.
+    game = Connect4()
+    connected = {websocket}
+
+    join_key = secrets.token_urlsafe(12)
+    JOIN[join_key] = game, connected
+
+    try:
+        # Send the secret access token to the browser of the first player,
+        # where it'll be used for building a "join" link.
+        event = {
+            "type": "init",
+            "join": join_key,
+        }
+        await websocket.send(json.dumps(event))
+
+        # Temporary - for testing.
+        print("first player started game", id(game))
+        async for message in websocket:
+            print("first player sent", message)
+
+    finally:
+        del JOIN[join_key]
+
+
+async def handler(websocket):
+    # Receive and parse the "init" event from the UI.
+    message = await websocket.recv()
+    event = json.loads(message)
+    assert event["type"] == "init"
+
+    # First player starts a new game.
+    await start(websocket)
+```
+
+In index.html, add an <a> element to display the link to share with the other player.
+
+```html
+<!-- /index.html -->
+<body>
+  <div class="actions">
+    <a class="action join" href="">Join</a>
+  </div>
+  <!-- ... -->
+</body>
+```
+
+In main.js, modify receiveMoves() to handle the "init" message and set the target of that link:
+
+```js
+// /main,js
+
+switch (event.type) {
+  case "init":
+    // Create link for inviting the second player.
+    document.querySelector(".join").href = "?join=" + event.join;
+    break;
+  // ...
+}
+```
+
+Restart the WebSocket server and reload http://localhost:8000/ in the browser. There’s a link labeled JOIN below the board with a target that looks like http://localhost:8000/?join=95ftAaU5DJVP1zvb.
+
+The server logs say first player started game .... If you click the board, you see "play" events. There is no feedback in the UI, though, because you haven’t restored the game logic yet.
+
+Before we get there, let’s handle links with a join query parameter.
+
+## Join a game
+
+We’ll now update the initialization sequence to account for the second player.
+
+In main.js, update initGame() to send the join key in the "init" message when it’s in the URL:
+
+```js
+// /main.js
+
+function initGame(websocket) {
+  websocket.addEventListener("open", () => {
+    // Send an "init" event according to who is connecting.
+    const params = new URLSearchParams(window.location.search);
+    let event = { type: "init" };
+    if (params.has("join")) {
+      // Second player joins an existing game.
+      event.join = params.get("join");
+    } else {
+      // First player starts a new game.
+    }
+    websocket.send(JSON.stringify(event));
+  });
+}
+```
+
+In app.py, update the handler coroutine to look for the join key in the "init" message, then load that game:
+
+```python
+# /app.py
+
+async def error(websocket, message):
+    event = {
+        "type": "error",
+        "message": message,
+    }
+    await websocket.send(json.dumps(event))
+
+
+async def join(websocket, join_key):
+    # Find the Connect Four game.
+    try:
+        game, connected = JOIN[join_key]
+    except KeyError:
+        await error(websocket, "Game not found.")
+        return
+
+    # Register to receive moves from this game.
+    connected.add(websocket)
+    try:
+
+        # Temporary - for testing.
+        print("second player joined game", id(game))
+        async for message in websocket:
+            print("second player sent", message)
+
+    finally:
+        connected.remove(websocket)
+
+
+async def handler(websocket):
+    # Receive and parse the "init" event from the UI.
+    message = await websocket.recv()
+    event = json.loads(message)
+    assert event["type"] == "init"
+
+    if "join" in event:
+        # Second player joins an existing game.
+        await join(websocket, event["join"])
+    else:
+        # First player starts a new game.
+        await start(websocket)
+```
+
+Restart the WebSocket server and reload http://localhost:8000/ in the browser.
+
+Copy the link labeled JOIN and open it in another browser. You may also open it in another tab or another window of the same browser; however, that makes it a bit tricky to remember which one is the first or second player.
+
+```
+NOTE: You must start a new game when you restart the server.
+
+Since games are stored in the memory of the Python process, they’re lost when you stop the server.
+
+Whenever you make changes to app.py, you must restart the server, create a new game in a browser, and join it in another browser.
+```
+
+The server logs say first player started game ... and second player joined game .... The numbers match, proving that the game local variable in both connection handlers points to same object in the memory of the Python process.
+
+Click the board in either browser. The server receives "play" events from the corresponding player.
+
+In the initialization sequence, you’re routing connections to start() or join() depending on the first message received by the server. This is a common pattern in servers that handle different clients.
+
+```
+NOTE: Why not use different URIs for start() and join()?
+
+Instead of sending an initialization event, you could encode the join key in the WebSocket URI e.g. ws://localhost:8001/join/<join_key>. The WebSocket server would parse websocket.path and route the connection, similar to how HTTP servers route requests.
+
+When you need to send sensitive data like authentication credentials to the server, sending it an event is considered more secure than encoding it in the URI because URIs end up in logs.
+
+For the purposes of this tutorial, both approaches are equivalent because the join key comes from an HTTP URL. There isn’t much at risk anyway!
+```
+
+Now you can restore the logic for playing moves and you’ll have a fully functional two-player game.
+
+## Add the game logic
+
+Once the initialization is done, the game is symmetrical, so you can write a single coroutine to process the moves of both players:
+
+```python
+async def play(websocket, game, player, connected):
+    ...
+```
+
+With such a coroutine, you can replace the temporary code for testing in start() by:
+
+```python
+await play(websocket, game, PLAYER1, connected)
+```
+
+and in join() by:
+
+```python
+await play(websocket, game, PLAYER2, connected)
+```
+
+The play() coroutine will reuse much of the code you wrote in the first part of the tutorial.
+
+Try to implement this by yourself!
+
+Keep in mind that you must restart the WebSocket server, reload the page to start a new game with the first player, copy the JOIN link, and join the game with the second player when you make changes.
+
+When play() works, you can play the game from two separate browsers, possibly running on separate computers on the same local network.
+
+A complete solution is available at the bottom of this document.
