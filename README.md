@@ -36,9 +36,9 @@ py -m http.server
 
 This tutorial assumes basic knowledge of Python and JavaScript.
 
-If you’re comfortable with virtual environments, you can use one for this tutorial. Else, don’t worry: websockets doesn’t have any dependencies; it shouldn’t create trouble in the default environment.
+If you're comfortable with virtual environments, you can use one for this tutorial. Else, don't worry: websockets doesn't have any dependencies; it shouldn't create trouble in the default environment.
 
-If you haven’t installed websockets yet, do it now:
+If you haven't installed websockets yet, do it now:
 
 ```bash
 pip install websockets
@@ -144,7 +144,7 @@ Open a shell, navigate to the directory containing app.py, and start the server:
 py app.py
 ```
 
-This doesn’t display anything. Hopefully the WebSocket server is running. Let’s make sure that it works. You cannot test the WebSocket server with a web browser like you tested the HTTP server. However, you can test it with websockets’ interactive client.
+This doesn't display anything. Hopefully the WebSocket server is running. Let's make sure that it works. You cannot test the WebSocket server with a web browser like you tested the HTTP server. However, you can test it with websockets' interactive client.
 
 Open another shell and run this command:
 
@@ -168,7 +168,7 @@ Traceback (most recent call last):
 websockets.exceptions.ConnectionClosedOK: received 1000 (OK); then sent 1000 (OK)
 ```
 
-Indeed, the server was waiting for the next message with recv() when the client disconnected. When this happens, websockets raises a ConnectionClosedOK exception to let you know that you won’t receive another message on this connection.
+Indeed, the server was waiting for the next message with recv() when the client disconnected. When this happens, websockets raises a ConnectionClosedOK exception to let you know that you won't receive another message on this connection.
 
 This exception creates noise in the server logs, making it more difficult to spot real errors when you add functionality to the server. Catch it in the handler() coroutine:
 
@@ -194,7 +194,7 @@ py app.py
 NOTE: You must restart the WebSocket server when you make changes
 ```
 
-Try connecting and disconnecting the interactive client again. The ConnectionClosedOK exception doesn’t appear anymore.
+Try connecting and disconnecting the interactive client again. The ConnectionClosedOK exception doesn't appear anymore.
 
 This pattern is so common that websockets provides a shortcut for iterating over messages received on the connection until the client disconnects:
 
@@ -204,9 +204,9 @@ async def handler(websocket):
         print(message)
 ```
 
-Restart the server and check with the interactive client that its behavior didn’t change.
+Restart the server and check with the interactive client that its behavior didn't change.
 
-At this point, you bootstrapped a web application and a WebSocket server. Let’s connect them.
+At this point, you bootstrapped a web application and a WebSocket server. Let's connect them.
 
 ## Transmit from browser to server
 
@@ -218,15 +218,15 @@ const websocket = new WebSocket("ws://localhost:8001/");
 
 Before you exchange messages with the server, you need to decide their format. There is no universal convention for this.
 
-Let’s use JSON objects with a type key identifying the type of the event and the rest of the object containing properties of the event.
+Let's use JSON objects with a type key identifying the type of the event and the rest of the object containing properties of the event.
 
-Here’s an event describing a move in the middle slot of the board:
+Here's an event describing a move in the middle slot of the board:
 
 ```js
 const event = { type: "play", column: 3 };
 ```
 
-Here’s how to serialize this event to JSON and send it to the server:
+Here's how to serialize this event to JSON and send it to the server:
 
 ```js
 websocket.send(JSON.stringify(event));
@@ -284,11 +284,11 @@ py app.py
 
 Refresh http://localhost:8000/ in your web browser. Click various columns in the board. The server receives messages with the expected column number.
 
-There isn’t any feedback in the board because you haven’t implemented that yet. Let’s do it.
+There isn't any feedback in the board because you haven't implemented that yet. Let's do it.
 
 ## Transmit from server to browser
 
-In JavaScript, you receive WebSocket messages by listening to message events. Here’s how to receive a message from the server and deserialize it from JSON:
+In JavaScript, you receive WebSocket messages by listening to message events. Here's how to receive a message from the server and deserialize it from JSON:
 
 ```js
 websocket.addEventListener("message", ({ data }) => {
@@ -297,7 +297,7 @@ websocket.addEventListener("message", ({ data }) => {
 });
 ```
 
-You’re going to need three types of messages from the server to the browser:
+You're going to need three types of messages from the server to the browser:
 
 ```js
 {type: "play", player: "red", column: 3, row: 0}
@@ -341,9 +341,9 @@ function receiveMoves(board, websocket) {
 NOTE: Why does showMessage use window.setTimeout?
 When playMove() modifies the state of the board, the browser renders changes asynchronously. Conversely, window.alert() runs synchronously and blocks rendering while the alert is visible.
 
-If you called window.alert() immediately after playMove(), the browser could display the alert before rendering the move. You could get a “Player red wins!” alert without seeing red’s last move.
+If you called window.alert() immediately after playMove(), the browser could display the alert before rendering the move. You could get a “Player red wins!” alert without seeing red's last move.
 
-We’re using window.alert() for simplicity in this tutorial. A real application would display these messages in the user interface instead. It wouldn’t be vulnerable to this problem.
+We're using window.alert() for simplicity in this tutorial. A real application would display these messages in the user interface instead. It wouldn't be vulnerable to this problem.
 ```
 
 Modify the initialization to call the receiveMoves() function:
@@ -360,7 +360,7 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 ```
 
-At this point, the user interface should receive events properly. Let’s test it by modifying the server to send some events.
+At this point, the user interface should receive events properly. Let's test it by modifying the server to send some events.
 
 Sending an event from Python is quite similar to JavaScript:
 
@@ -369,7 +369,7 @@ event = {"type": "play", "player": "red", "column": 3, "row": 0}
 await websocket.send(json.dumps(event))
 ```
 
-Don’t forget to serialize the event with json.dumps(). Else, websockets raises TypeError: data is a dict-like object.
+Don't forget to serialize the event with json.dumps(). Else, websockets raises TypeError: data is a dict-like object.
 
 Modify the handler() coroutine in app.py as follows:
 
@@ -411,7 +411,7 @@ Once you plug the game engine to process moves, you will have a fully functional
 
 ## Add the game logic
 
-In the handler() coroutine, you’re going to initialize a game:
+In the handler() coroutine, you're going to initialize a game:
 
 ```python
 # /app.py
@@ -424,7 +424,7 @@ async def handler(websocket):
     ...
 ```
 
-Then, you’re going to iterate over incoming messages and take these steps:
+Then, you're going to iterate over incoming messages and take these steps:
 
 1. parse an event of type "play", the only type of event that the user interface sends;
 
@@ -442,7 +442,7 @@ Keep in mind that you must restart the WebSocket server and reload the page in t
 
 When it works, you can play the game from a single browser, with players taking alternate turns.
 
-NOTE: Enable debug logs to see all messages sent and received. Here’s how to enable debug logs:
+NOTE: Enable debug logs to see all messages sent and received. Here's how to enable debug logs:
 
 ```python
 import logging
@@ -458,18 +458,18 @@ Now you want to open two WebSocket connections from two separate browsers, one f
 
 ## Share game state
 
-As long as you’re running a single server process, you can share state by storing it in a global variable.
+As long as you're running a single server process, you can share state by storing it in a global variable.
 
 ```
 NOTE: What if you need to scale to multiple server processes?
 In that case, you must design a way for the process that handles a given connection to be aware of relevant events for that client. This is often achieved with a publish / subscribe mechanism.
 ```
 
-How can you make two connection handlers agree on which game they’re playing? When the first player starts a game, you give it an identifier. Then, you communicate the identifier to the second player. When the second player joins the game, you look it up with the identifier.
+How can you make two connection handlers agree on which game they're playing? When the first player starts a game, you give it an identifier. Then, you communicate the identifier to the second player. When the second player joins the game, you look it up with the identifier.
 
-In addition to the game itself, you need to keep track of the WebSocket connections of the two players. Since both players receive the same events, you don’t need to treat the two connections differently; you can store both in the same set.
+In addition to the game itself, you need to keep track of the WebSocket connections of the two players. Since both players receive the same events, you don't need to treat the two connections differently; you can store both in the same set.
 
-Let’s sketch this in code.
+Let's sketch this in code.
 
 A module-level dict enables lookups by identifier:
 
@@ -522,7 +522,7 @@ async def handler(websocket):
         connected.remove(websocket)
 ```
 
-Notice how we’re carefully cleaning up global state with try: ... finally: ... blocks. Else, we could leave references to games or connections in global state, which would cause a memory leak.
+Notice how we're carefully cleaning up global state with try: ... finally: ... blocks. Else, we could leave references to games or connections in global state, which would cause a memory leak.
 
 In both connection handlers, you have a game pointing to the same Connect4 instance, so you can interact with the game, and a connected set of connections, so you can send game events to both players as follows:
 
@@ -537,7 +537,7 @@ async def handler(websocket):
     ...
 ```
 
-Perhaps you spotted a major piece missing from the puzzle. How does the second player obtain join_key? Let’s design new events to carry this information.
+Perhaps you spotted a major piece missing from the puzzle. How does the second player obtain join_key? Let's design new events to carry this information.
 
 To start a game, the first player sends an "init" event:
 
@@ -563,11 +563,11 @@ To join the game, the second player sends a different "init" event:
 
 The connection handler for the second player can look up the game with the join key as shown above. There is no need to respond.
 
-Let’s dive into the details of implementing this design.
+Let's dive into the details of implementing this design.
 
 ## Start a game
 
-We’ll start with the initialization sequence for the first player.
+We'll start with the initialization sequence for the first player.
 
 In main.js, define a function to send an initialization event when the WebSocket connection is established, which triggers an open event:
 
@@ -672,17 +672,17 @@ switch (event.type) {
 }
 ```
 
-Restart the WebSocket server and reload http://localhost:8000/ in the browser. There’s a link labeled JOIN below the board with a target that looks like http://localhost:8000/?join=95ftAaU5DJVP1zvb.
+Restart the WebSocket server and reload http://localhost:8000/ in the browser. There's a link labeled JOIN below the board with a target that looks like http://localhost:8000/?join=95ftAaU5DJVP1zvb.
 
-The server logs say first player started game .... If you click the board, you see "play" events. There is no feedback in the UI, though, because you haven’t restored the game logic yet.
+The server logs say first player started game .... If you click the board, you see "play" events. There is no feedback in the UI, though, because you haven't restored the game logic yet.
 
-Before we get there, let’s handle links with a join query parameter.
+Before we get there, let's handle links with a join query parameter.
 
 ## Join a game
 
-We’ll now update the initialization sequence to account for the second player.
+We'll now update the initialization sequence to account for the second player.
 
-In main.js, update initGame() to send the join key in the "init" message when it’s in the URL:
+In main.js, update initGame() to send the join key in the "init" message when it's in the URL:
 
 ```js
 // /main.js
@@ -758,7 +758,7 @@ Copy the link labeled JOIN and open it in another browser. You may also open it 
 ```
 NOTE: You must start a new game when you restart the server.
 
-Since games are stored in the memory of the Python process, they’re lost when you stop the server.
+Since games are stored in the memory of the Python process, they're lost when you stop the server.
 
 Whenever you make changes to app.py, you must restart the server, create a new game in a browser, and join it in another browser.
 ```
@@ -767,7 +767,7 @@ The server logs say first player started game ... and second player joined game 
 
 Click the board in either browser. The server receives "play" events from the corresponding player.
 
-In the initialization sequence, you’re routing connections to start() or join() depending on the first message received by the server. This is a common pattern in servers that handle different clients.
+In the initialization sequence, you're routing connections to start() or join() depending on the first message received by the server. This is a common pattern in servers that handle different clients.
 
 ```
 NOTE: Why not use different URIs for start() and join()?
@@ -776,10 +776,10 @@ Instead of sending an initialization event, you could encode the join key in the
 
 When you need to send sensitive data like authentication credentials to the server, sending it an event is considered more secure than encoding it in the URI because URIs end up in logs.
 
-For the purposes of this tutorial, both approaches are equivalent because the join key comes from an HTTP URL. There isn’t much at risk anyway!
+For the purposes of this tutorial, both approaches are equivalent because the join key comes from an HTTP URL. There isn't much at risk anyway!
 ```
 
-Now you can restore the logic for playing moves and you’ll have a fully functional two-player game.
+Now you can restore the logic for playing moves and you'll have a fully functional two-player game.
 
 ## Add the game logic
 
@@ -811,3 +811,109 @@ Keep in mind that you must restart the WebSocket server, reload the page to star
 When play() works, you can play the game from two separate browsers, possibly running on separate computers on the same local network.
 
 A complete solution is available at the bottom of this document.
+
+## Watch a game
+
+Let's add one more feature: allow spectators to watch the game.
+
+The process for inviting a spectator can be the same as for inviting the second player. You will have to duplicate all the initialization logic:
+
+- declare a WATCH global variable similar to JOIN;
+
+- generate a watch key when creating a game; it must be different from the join key, or else a spectator could hijack a game by tweaking the URL;
+
+- include the watch key in the "init" event sent to the first player;
+
+- generate a WATCH link in the UI with a watch query parameter;
+
+- update the initGame() function to handle such links;
+
+- update the handler() coroutine to invoke a watch() coroutine for spectators;
+
+- prevent sendMoves() from sending "play" events for spectators.
+
+Once the initialization sequence is done, watching a game is as simple as registering the WebSocket connection in the connected set in order to receive game events and doing nothing until the spectator disconnects. You can wait for a connection to terminate with wait_closed():
+
+```python
+# /app.py
+async def watch(websocket, watch_key):
+
+    ...
+
+    connected.add(websocket)
+    try:
+        await websocket.wait_closed()
+    finally:
+        connected.remove(websocket)
+```
+
+The connection can terminate because the receiveMoves() function closed it explicitly after receiving a "win" event, because the spectator closed their browser, or because the network failed.
+
+Again, try to implement this by yourself.
+
+When watch() works, you can invite spectators to watch the game from other browsers, as long as they're on the same local network.
+
+As a further improvement, you may support adding spectators while a game is already in progress. This requires replaying moves that were played before the spectator was added to the connected set. Past moves are available in the moves attribute of the game.
+
+This feature is included in the solution proposed below.
+
+## Broadcast
+
+When you need to send a message to the two players and to all spectators, you're using this pattern:
+
+```python
+async def handler(websocket):
+
+    ...
+
+    for connection in connected:
+        await connection.send(json.dumps(event))
+
+    ...
+```
+
+Since this is a very common pattern in WebSocket servers, websockets provides the broadcast() helper for this purpose:
+
+```python
+from websockets.asyncio.server import broadcast
+
+async def handler(websocket):
+
+    ...
+
+    broadcast(connected, json.dumps(event))
+
+    ...
+```
+
+Calling broadcast() once is more efficient than calling send() in a loop.
+
+However, there's a subtle difference in behavior. Did you notice that there's no await in the second version? Indeed, broadcast() is a function, not a coroutine like send() or recv().
+
+It's quite obvious why recv() is a coroutine. When you want to receive the next message, you have to wait until the client sends it and the network transmits it.
+
+It's less obvious why send() is a coroutine. If you send many messages or large messages, you could write data faster than the network can transmit it or the client can read it. Then, outgoing data will pile up in buffers, which will consume memory and may crash your application.
+
+To avoid this problem, send() waits until the write buffer drains. By slowing down the application as necessary, this ensures that the server doesn't send data too quickly. This is called backpressure and it's useful for building robust systems.
+
+That said, when you're sending the same messages to many clients in a loop, applying backpressure in this way can become counterproductive. When you're broadcasting, you don't want to slow down everyone to the pace of the slowest clients; you want to drop clients that cannot keep up with the data stream. That's why broadcast() doesn't wait until write buffers drain and therefore doesn't need to be a coroutine.
+
+For our Connect Four game, there's no difference in practice. The total amount of data sent on a connection for a game of Connect Four is so small that the write buffer cannot fill up. As a consequence, backpressure never kicks in.
+
+## Summary
+
+In this second part of the tutorial, you learned how to:
+
+- configure a connection by exchanging initialization messages;
+
+- keep track of connections within a single server process;
+
+- wait until a client disconnects in a connection handler;
+
+- broadcast a message to many connections efficiently.
+
+You can now play a Connect Four game from separate browser, communicating over WebSocket connections with a server that synchronizes the game logic!
+
+However, the two players have to be on the same local network as the server, so the constraint of being in the same place still mostly applies.
+
+Head over to the third part of the tutorial to deploy the game to the web and remove this constraint.
